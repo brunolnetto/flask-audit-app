@@ -1,11 +1,31 @@
+from flask_migrate import Migrate, upgrade
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.sql import func
+
 from alembic.config import Config
+from alembic.config import Config
+from alembic import command
+
 from datetime import datetime
-from os import getenv
+from os import path, getenv
+
+import logging.config
+import logging
+
+import uuid
+
 
 app = Flask(__name__)
+
+# Load the logging configuration file
+base_path=path.split(path.dirname(path.abspath(__file__)))[0]
+fileName = path.join(base_path, "app/logging.conf")
+logging.config.fileConfig(fileName)
+
+# Create a logger instance
+logger = logging.getLogger('root') 
 
 # Read the DATABASE_URL environment variable
 database_user=getenv('POSTGRES_USER')
@@ -16,7 +36,9 @@ database_name=getenv('POSTGRES_DB')
 
 debug=getenv('DEBUG')
 
-database_uri=f"postgresql://{database_user}:{database_password}@{database_host}:{database_port}/{database_name}"
+route=f"{database_host}:{database_port}/{database_name}"
+credentials=f"{database_user}:{database_password}"
+database_uri=f"postgresql://{credentials}@{route}"
 
 # Configure the SQLAlchemy database connection
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
@@ -27,28 +49,18 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # Define the AuditLog model
+USER_MAX_LENGTH=50
+ACTION_MAX_LENGTH=100
 class AuditLog(db.Model):
-    audi_id = db.Column(db.Integer, primary_key=True)
-    audi_user = db.Column(db.String(50), nullable=False)
-    audi_action = db.Column(db.String(100), nullable=False)
-    audi_inserted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __tablename__ = 'audit_log'
+    
+    audi_id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audi_user = db.Column(db.String(USER_MAX_LENGTH), nullable=False)
+    audi_action = db.Column(db.String(ACTION_MAX_LENGTH), nullable=False)
+    audi_inserted_at = db.Column(db.DateTime(timezone=True), default=func.now())
 
     def __repr__(self):
-        return f'<AuditLog {self.audi_user} - {self.audi_action}>'
-
-def apply_migrations():
-    alembic_cfg = Config("migrations/alembic.ini")
-    command.upgrade(alembic_cfg, "head")
-
-@app.before_first_request
-def initialize_database():
-    # Apply migrations
-    apply_migrations()
-
-    # Optionally create the database tables if they don't exist
-    with app.app_context():
-        db.create_all()
-
+        return f'AuditLog("{self.audi_user}", "{self.audi_action}")'
 
 def log_action(user, action):
     audit_log = AuditLog(audi_user=user, audi_action=action)
@@ -72,7 +84,13 @@ def perform_action():
 @app.route('/logs', methods=['GET'])
 def get_logs():
     logs = AuditLog.query.all()
-    return jsonify([{'user': log.user, 'action': log.action, 'timestamp': log.timestamp} for log in logs]), 200
+    return jsonify([
+        {
+            'user': log.audi_user, 
+            'action': log.audi_action, 
+            'inserted_at': log.audi_inserted_at
+        } for log in logs
+    ]), 200
 
 if __name__ == '__main__':
     app.run(debug=True if debug else False)

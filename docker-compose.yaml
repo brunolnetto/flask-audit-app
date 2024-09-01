@@ -3,17 +3,12 @@ services:
     build: .    
     ports:      
       - "5000:5000"    
-    environment:      
-      - SQLALCHEMY_DATABASE_URI=postgresql://postgres:password@db/audit_log_db    
     depends_on:      
-      - db  
-      
+      - db
+
   db:
     image: postgres:13
-    environment:      
-      POSTGRES_USER: postgres      
-      POSTGRES_PASSWORD: password      
-      POSTGRES_DB: audit_log_db    
+    env_file: .env
     volumes:      
       - pgdata:/var/lib/postgresql/data
       
