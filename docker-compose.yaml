@@ -6,6 +6,12 @@ services:
     depends_on:      
       - db
 
+  migrate:  
+    build: .  
+    depends_on:    
+      - db  
+    entrypoint: ["/bin/sh", "-c", "./scripts/wait-for-postgres.sh db && python ./check_and_migrate.py"]
+
   db:
     image: postgres:13
     env_file: .env
